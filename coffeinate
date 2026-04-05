@@ -15,30 +15,31 @@ CREAM='\033[38;5;223m'
 
 # ── State ───────────────────────────────────────────────────────────────────
 BG_PID=""
-EXIT_CODE=0
 RECEIVED_SIGNAL=""
 
 cleanup() {
+    local exit_status=$?
     trap - EXIT INT TERM HUP QUIT  # prevent re-entry on cascading signals
     tput cnorm 2>/dev/null || true  # restore cursor
     printf '\033[?25h'              # belt-and-suspenders cursor restore
     if [[ -n "$BG_PID" ]]; then
-        kill "$BG_PID" 2>/dev/null
-        wait "$BG_PID" 2>/dev/null || EXIT_CODE=$?
+        kill "$BG_PID" 2>/dev/null || true
+        wait "$BG_PID" 2>/dev/null || exit_status=$?
     fi
     echo ""
     case "$RECEIVED_SIGNAL" in
-        INT)  EXIT_CODE=130 ;;
-        TERM) EXIT_CODE=143 ;;
-        HUP)  EXIT_CODE=129 ;;
+        INT)  exit_status=130 ;;
+        TERM) exit_status=143 ;;
+        HUP)  exit_status=129 ;;
+        QUIT) exit_status=131 ;;
     esac
-    exit "$EXIT_CODE"
+    exit "$exit_status"
 }
 trap cleanup EXIT
 trap 'RECEIVED_SIGNAL=INT;  cleanup' INT
 trap 'RECEIVED_SIGNAL=TERM; cleanup' TERM
 trap 'RECEIVED_SIGNAL=HUP;  cleanup' HUP
-trap 'printf "\033[?25h"; tput cnorm 2>/dev/null || true' QUIT
+trap 'RECEIVED_SIGNAL=QUIT; cleanup' QUIT
 
 usage() {
     cat <<'USAGE'
@@ -73,6 +74,7 @@ while (( $# )); do
         -h|--help) usage ;;
         -t|-w)
             [[ $# -ge 2 ]] || { echo "Error: $1 requires a value" >&2; exit 1; }
+            [[ $2 =~ ^[0-9]+$ ]] || { echo "Error: $1 requires a numeric value" >&2; exit 1; }
             CAFF_ARGS+=("$1" "$2"); HAS_FLAGS=true; shift 2 ;;
         --) shift; COMMAND=("$@"); break ;;
         -*) CAFF_ARGS+=("$1"); HAS_FLAGS=true; shift ;;
@@ -81,7 +83,7 @@ while (( $# )); do
 done
 
 # Default to preventing display sleep when running bare
-if ! $HAS_FLAGS && (( ${#COMMAND[@]} == 0 )); then
+if [[ $HAS_FLAGS == false ]] && (( ${#COMMAND[@]} == 0 )); then
     CAFF_ARGS+=("-d")
 fi
 
