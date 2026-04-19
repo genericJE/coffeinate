@@ -54,7 +54,7 @@ Options:
     -m          Prevent disk idle sleep
     -s          Prevent sleep (AC power only)
     -u          Declare user active
-    -t <secs>   Timeout in seconds
+    -t <mins>   Timeout in minutes
     -w <pid>    Wait for process to exit
     -h          Show this help
 
@@ -72,7 +72,11 @@ HAS_FLAGS=false
 while (( $# )); do
     case "$1" in
         -h|--help) usage ;;
-        -t|-w)
+        -t)
+            [[ $# -ge 2 ]] || { echo "Error: $1 requires a value" >&2; exit 1; }
+            [[ $2 =~ ^[0-9]+$ ]] || { echo "Error: $1 requires a numeric value" >&2; exit 1; }
+            CAFF_ARGS+=("$1" "$(( $2 * 60 ))"); HAS_FLAGS=true; shift 2 ;;
+        -w)
             [[ $# -ge 2 ]] || { echo "Error: $1 requires a value" >&2; exit 1; }
             [[ $2 =~ ^[0-9]+$ ]] || { echo "Error: $1 requires a numeric value" >&2; exit 1; }
             CAFF_ARGS+=("$1" "$2"); HAS_FLAGS=true; shift 2 ;;
