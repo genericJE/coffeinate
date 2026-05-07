@@ -16,17 +16,20 @@ CREAM='\033[38;5;223m'
 # ── State ───────────────────────────────────────────────────────────────────
 BG_PID=""
 RECEIVED_SIGNAL=""
+SILENT=false
 
 cleanup() {
     local exit_status=$?
     trap - EXIT INT TERM HUP QUIT  # prevent re-entry on cascading signals
-    tput cnorm 2>/dev/null || true  # restore cursor
-    printf '\033[?25h'              # belt-and-suspenders cursor restore
+    if [[ $SILENT == false ]]; then
+        tput cnorm 2>/dev/null || true  # restore cursor
+        printf '\033[?25h'              # belt-and-suspenders cursor restore
+    fi
     if [[ -n "$BG_PID" ]]; then
         kill "$BG_PID" 2>/dev/null || true
         wait "$BG_PID" 2>/dev/null || exit_status=$?
     fi
-    echo ""
+    [[ $SILENT == false ]] && echo ""
     case "$RECEIVED_SIGNAL" in
         INT)  exit_status=130 ;;
         TERM) exit_status=143 ;;
@@ -57,6 +60,7 @@ Options:
     -t <mins>   Timeout in minutes
     -T <HH:MM>  Shut down at given time
     -w <pid>    Wait for process to exit
+    -q          Silent mode (no animation, no output)
     -h          Show this help
 
 All flags are passed through to /usr/bin/caffeinate.
@@ -92,6 +96,7 @@ while (( $# )); do
             [[ $# -ge 2 ]] || { echo "Error: $1 requires a value" >&2; exit 1; }
             [[ $2 =~ ^[0-9]+$ ]] || { echo "Error: $1 requires a numeric value" >&2; exit 1; }
             CAFF_ARGS+=("$1" "$2"); HAS_FLAGS=true; shift 2 ;;
+        -q) SILENT=true; HAS_FLAGS=true; shift ;;
         --) shift; COMMAND=("$@"); break ;;
         -*) CAFF_ARGS+=("$1"); HAS_FLAGS=true; shift ;;
          *) COMMAND=("$@"); break ;;
@@ -183,23 +188,32 @@ else
 fi
 BG_PID=$!
 
-# Hide cursor
-tput civis 2>/dev/null || true
+if [[ $SILENT == true ]]; then
+    # Poll without drawing. `wait` would swallow the trapped signal (bash
+    # quirk: `wait $pid || true` masks the queued INT/TERM), so use the same
+    # interruptible-sleep loop as the animation path.
+    while kill -0 "$BG_PID" 2>/dev/null; do
+        sleep 0.5
+    done
+else
+    # Hide cursor
+    tput civis 2>/dev/null || true
 
-# Print initial blank lines to reserve space
-for (( i = 0; i < TOTAL_HEIGHT; i++ )); do
-    echo ""
-done
+    # Print initial blank lines to reserve space
+    for (( i = 0; i < TOTAL_HEIGHT; i++ )); do
+        echo ""
+    done
 
-# Animate
-frame=0
-while true; do
-    # Check if the background process exited (command finished or timeout)
-    if ! kill -0 "$BG_PID" 2>/dev/null; then
-        break
-    fi
+    # Animate
+    frame=0
+    while true; do
+        # Check if the background process exited (command finished or timeout)
+        if ! kill -0 "$BG_PID" 2>/dev/null; then
+            break
+        fi
 
-    draw_frame "$frame"
-    (( ++frame ))
-    sleep 0.3
-done
+        draw_frame "$frame"
+        (( ++frame ))
+        sleep 0.3
+    done
+fi
