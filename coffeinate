@@ -189,12 +189,7 @@ fi
 BG_PID=$!
 
 if [[ $SILENT == true ]]; then
-    # Poll without drawing. `wait` would swallow the trapped signal (bash
-    # quirk: `wait $pid || true` masks the queued INT/TERM), so use the same
-    # interruptible-sleep loop as the animation path.
-    while kill -0 "$BG_PID" 2>/dev/null; do
-        sleep 0.5
-    done
+    wait "$BG_PID" 2>/dev/null || true
 else
     # Hide cursor
     tput civis 2>/dev/null || true
