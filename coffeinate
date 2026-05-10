@@ -17,6 +17,7 @@ CREAM='\033[38;5;223m'
 BG_PID=""
 RECEIVED_SIGNAL=""
 SILENT=false
+HAS_ASSERTION=false
 
 cleanup() {
     local exit_status=$?
@@ -72,7 +73,6 @@ USAGE
 # ── Parse args ──────────────────────────────────────────────────────────────
 CAFF_ARGS=()
 COMMAND=()
-HAS_FLAGS=false
 
 while (( $# )); do
     case "$1" in
@@ -80,7 +80,7 @@ while (( $# )); do
         -t)
             [[ $# -ge 2 ]] || { echo "Error: $1 requires a value" >&2; exit 1; }
             [[ $2 =~ ^[0-9]+$ ]] || { echo "Error: $1 requires a numeric value" >&2; exit 1; }
-            CAFF_ARGS+=("$1" "$(( $2 * 60 ))"); HAS_FLAGS=true; shift 2 ;;
+            CAFF_ARGS+=("$1" "$(( $2 * 60 ))"); shift 2 ;;
         -T)
             [[ $# -ge 2 ]] || { echo "Error: $1 requires a value" >&2; exit 1; }
             [[ $2 =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]] || { echo "Error: $1 requires HH:MM format (e.g. 17:30)" >&2; exit 1; }
@@ -91,22 +91,21 @@ while (( $# )); do
             now_s=$((10#$(date +%S)))
             delta=$(( target_h * 3600 + target_m * 60 - (now_h * 3600 + now_m * 60 + now_s) ))
             (( delta <= 0 )) && delta=$(( delta + 86400 ))
-            CAFF_ARGS+=("-t" "$delta"); HAS_FLAGS=true; shift 2 ;;
+            CAFF_ARGS+=("-t" "$delta"); shift 2 ;;
         -w)
             [[ $# -ge 2 ]] || { echo "Error: $1 requires a value" >&2; exit 1; }
             [[ $2 =~ ^[0-9]+$ ]] || { echo "Error: $1 requires a numeric value" >&2; exit 1; }
-            CAFF_ARGS+=("$1" "$2"); HAS_FLAGS=true; shift 2 ;;
-        -q) SILENT=true; HAS_FLAGS=true; shift ;;
+            CAFF_ARGS+=("$1" "$2"); shift 2 ;;
+        -q) SILENT=true; shift ;;
+        -d|-i|-m|-s|-u) CAFF_ARGS+=("$1"); HAS_ASSERTION=true; shift ;;
         --) shift; COMMAND=("$@"); break ;;
-        -*) CAFF_ARGS+=("$1"); HAS_FLAGS=true; shift ;;
+        -*) CAFF_ARGS+=("$1"); shift ;;
          *) COMMAND=("$@"); break ;;
     esac
 done
 
-# Default to preventing display sleep when running bare
-if [[ $HAS_FLAGS == false ]] && (( ${#COMMAND[@]} == 0 )); then
-    CAFF_ARGS+=("-d")
-fi
+# Default to preventing display sleep unless the user picked another assertion
+[[ $HAS_ASSERTION == false ]] && CAFF_ARGS+=("-d")
 
 # ── Steam animation frames ─────────────────────────────────────────────────
 # 6 frames of steam rising above the mug, aligned to the 10-char mug width.
