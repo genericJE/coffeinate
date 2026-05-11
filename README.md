@@ -1,7 +1,5 @@
 # coffeinate
 
-If anything here ends up being useful to you and you feel like saying thanks, my PayPal is https://paypal.me/genericJE. Truly no expectation either way, just leaving the option here in case.
-
 Keep your Mac awake, with style. A small wrapper around `/usr/bin/caffeinate` that adds a friendly prompt animation and a few ergonomic flags. Anything that works with `caffeinate` works here.
 
 ## Install
@@ -41,3 +39,5 @@ Press Ctrl-C to stop.
 ## License
 
 MIT.
+
+If anything here ends up being useful to you and you feel like saying thanks, my PayPal is https://paypal.me/genericJE. Truly no expectation either way, just leaving the option here in case.
