@@ -1,5 +1,9 @@
 # coffeinate
 
+<p align="center">
+  <img src="coffee.gif" alt="coffeinate animated coffee mug" width="333">
+</p>
+
 Keep your Mac awake, with style. A small wrapper around `/usr/bin/caffeinate` that adds a friendly prompt animation and a few ergonomic flags. Anything that works with `caffeinate` works here.
 
 ## Install
