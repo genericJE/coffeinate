@@ -18,6 +18,71 @@ BG_PID=""
 RECEIVED_SIGNAL=""
 SILENT=false
 HAS_ASSERTION=false
+LID=false
+LID_APPLIED=false
+SUDO_PID=""
+
+# ── Lid mode ────────────────────────────────────────────────────────────────
+# Closing the lid raises a clamshell event that overrides every userspace power
+# assertion, so nothing caffeinate does can survive it. The only lever is the
+# kernel's SleepDisabled flag, which needs root to set and must be put back on
+# the way out - leaving it on means the Mac never sleeps on lid close again.
+
+lid_sleep_is_disabled() {
+    ioreg -r -k SleepDisabled -d 1 2>/dev/null | grep -q '"SleepDisabled" = Yes'
+}
+
+set_lid_sleep() {  # $1: 1 to disable lid sleep, 0 to restore it
+    sudo -n /usr/bin/pmset -a disablesleep "$1" 2>/dev/null \
+        || sudo /usr/bin/pmset -a disablesleep "$1"
+}
+
+# Keep the sudo timestamp warm so the restore on exit never stops to ask for a
+# password. Dies with the parent so a killed coffeinate leaves nothing behind,
+# and takes its own sleep down with it rather than orphaning one.
+start_sudo_keepalive() {
+    local parent=$$
+    (
+        sleep_pid=""
+        trap 'kill "$sleep_pid" 2>/dev/null; exit 0' TERM
+        while kill -0 "$parent" 2>/dev/null; do
+            sudo -n -v 2>/dev/null || true
+            sleep 60 & sleep_pid=$!
+            wait "$sleep_pid" 2>/dev/null || true
+        done
+    ) &
+    SUDO_PID=$!
+}
+
+enable_lid_mode() {
+    if lid_sleep_is_disabled; then
+        echo "Note: lid sleep was already disabled before coffeinate started."
+        echo "      Leaving it as it is on exit. To restore it yourself:"
+        echo "          sudo pmset -a disablesleep 0"
+        return 0
+    fi
+    if ! sudo -n true 2>/dev/null; then
+        if [[ ! -t 0 ]]; then
+            echo "Error: -L needs root and there is no terminal to ask on." >&2
+            echo "       Allow pmset in sudoers, or run without -L." >&2
+            exit 1
+        fi
+        echo "-L needs root to hold the lid open."
+    fi
+    set_lid_sleep 1 || { echo "Error: could not disable lid sleep." >&2; exit 1; }
+    LID_APPLIED=true
+    start_sudo_keepalive
+}
+
+restore_lid_mode() {
+    [[ $LID_APPLIED == true ]] || return 0
+    LID_APPLIED=false
+    if ! set_lid_sleep 0; then
+        echo "" >&2
+        echo "Warning: lid sleep is still disabled. Restore it with:" >&2
+        echo "    sudo pmset -a disablesleep 0" >&2
+    fi
+}
 
 cleanup() {
     local exit_status=$?
@@ -30,6 +95,11 @@ cleanup() {
         kill "$BG_PID" 2>/dev/null || true
         wait "$BG_PID" 2>/dev/null || exit_status=$?
     fi
+    if [[ -n "$SUDO_PID" ]]; then
+        kill "$SUDO_PID" 2>/dev/null || true
+        wait "$SUDO_PID" 2>/dev/null || true
+    fi
+    restore_lid_mode
     [[ $SILENT == false ]] && echo ""
     case "$RECEIVED_SIGNAL" in
         INT)  exit_status=130 ;;
@@ -58,13 +128,15 @@ Options:
     -m          Prevent disk idle sleep
     -s          Prevent sleep (AC power only)
     -u          Declare user active
+    -L          Keep running with the lid closed (implies -i, needs sudo)
     -t <mins>   Timeout in minutes
     -T <HH:MM>  Shut down at given time
     -w <pid>    Wait for process to exit
     -q          Silent mode (no animation, no output)
     -h          Show this help
 
-All flags are passed through to /usr/bin/caffeinate.
+All flags except -L are passed through to /usr/bin/caffeinate.
+-L disables lid sleep via pmset and restores it when coffeinate exits.
 Press Ctrl-C to stop.
 USAGE
     exit 0
@@ -97,6 +169,11 @@ while (( $# )); do
             [[ $2 =~ ^[0-9]+$ ]] || { echo "Error: $1 requires a numeric value" >&2; exit 1; }
             CAFF_ARGS+=("$1" "$2"); shift 2 ;;
         -q) SILENT=true; shift ;;
+        -L)
+            # The display is off with the lid shut, so -d is meaningless here;
+            # what the user wants is for the system itself to stay up.
+            [[ $LID == false ]] && CAFF_ARGS+=("-i")
+            LID=true; HAS_ASSERTION=true; shift ;;
         -d|-i|-m|-s|-u) CAFF_ARGS+=("$1"); HAS_ASSERTION=true; shift ;;
         --) shift; COMMAND=("$@"); break ;;
         -*) CAFF_ARGS+=("$1"); shift ;;
@@ -106,6 +183,9 @@ done
 
 # Default to preventing display sleep unless the user picked another assertion
 [[ $HAS_ASSERTION == false ]] && CAFF_ARGS+=("-d")
+
+# Do this before the cursor is hidden so any sudo prompt lands on a clean screen
+[[ $LID == true ]] && enable_lid_mode
 
 # ── Steam animation frames ─────────────────────────────────────────────────
 # 6 frames of steam rising above the mug, aligned to the 10-char mug width.
@@ -151,8 +231,9 @@ steam_frame_5=(
 # Tall Latte style with colored regions drawn in draw_frame().
 
 # ── Drawing ─────────────────────────────────────────────────────────────────
-# steam(4) + mug(7) = 11
+# steam(4) + mug(7) = 11, plus one status line in lid mode
 TOTAL_HEIGHT=11
+[[ $LID == true ]] && TOTAL_HEIGHT=12
 
 draw_frame() {
     local frame_num=$(( $1 % 6 ))
@@ -175,7 +256,10 @@ draw_frame() {
     printf '\033[2K    '"${RED}│${CREAM}${DIM}........${RESET}${RED}│${RESET}"'\n'
     printf '\033[2K    '"${RED}└────────┘${RESET}"'\n'
 
-
+    # Status line (lid mode only) - keep in step with TOTAL_HEIGHT
+    if [[ $LID == true ]]; then
+        printf '\033[2K    '"${DIM}${WHITE}closing lid is ok${RESET}"'\n'
+    fi
 }
 
 # ── Main ────────────────────────────────────────────────────────────────────

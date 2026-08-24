@@ -32,6 +32,7 @@ coffeinate [options] [command ...]
 | `-m` | Prevent disk idle sleep |
 | `-s` | Prevent sleep (AC power only) |
 | `-u` | Declare user active |
+| `-L` | Keep running with the lid closed (implies `-i`, needs `sudo`) |
 | `-t <mins>` | Timeout in minutes |
 | `-T <HH:MM>` | Shut down at given time |
 | `-w <pid>` | Wait for a process to exit |
@@ -39,6 +40,27 @@ coffeinate [options] [command ...]
 | `-h` | Show help |
 
 Press Ctrl-C to stop.
+
+## Closing the lid
+
+`caffeinate` cannot survive a lid close. Shutting the lid raises a clamshell event that overrides every userspace power assertion, so the Mac sleeps however many assertions are held. The only lever is the kernel's `SleepDisabled` flag, and that is what `-L` sets:
+
+```
+coffeinate -L -- ./long-build.sh
+```
+
+That asks for `sudo` once, disables lid sleep for as long as coffeinate runs, and puts it back on the way out. `-L` implies `-i`, because with the lid shut the display is off anyway and what you actually want is for the system to stay up.
+
+Worth knowing:
+
+* `SleepDisabled` persists across reboots, so restoring it matters. coffeinate restores it on Ctrl-C and on `TERM`, `HUP` and `QUIT`. A `kill -9` gives it no chance to, in which case clear the flag yourself with `sudo pmset -a disablesleep 0`.
+* If lid sleep was already disabled before coffeinate started, coffeinate says so and leaves it alone rather than clearing something it did not set.
+* A closed lid traps heat and the battery still drains. Prefer AC power, and keep the machine out of a bag while it runs.
+* For unattended runs where nobody can type a password, allow just the one command in sudoers via `sudo visudo`:
+
+```
+%admin ALL=(root) NOPASSWD: /usr/bin/pmset -a disablesleep *
+```
 
 ## License
 
